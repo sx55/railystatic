@@ -53,19 +53,19 @@
 <!-- Train Title & Primary Details -->
 <div class="mt-space-md">
 <h1 id="trainTitle" class="font-headline-lg text-headline-lg text-on-surface tracking-tight font-extrabold">
-      Gaya – Howrah Vande Bharat Express
+  Train status loading...
     </h1>
 <div class="flex items-center gap-space-md mt-2 flex-wrap">
 <div class="flex items-center gap-2 text-on-surface font-title-md text-title-md">
-<span class="font-bold text-primary">GAYA</span>
-<span class="text-xs text-secondary font-normal">Gaya Jn</span>
+<span id="sourceCodeText" class="font-bold text-primary">---</span>
+<span id="sourceNameText" class="text-xs text-secondary font-normal">Source</span>
 <span class="material-symbols-outlined text-primary text-[20px]">arrow_forward</span>
-<span class="font-bold text-primary">HWH</span>
-<span class="text-xs text-secondary font-normal">Howrah Jn</span>
+<span id="destinationCodeText" class="font-bold text-primary">---</span>
+<span id="destinationNameText" class="text-xs text-secondary font-normal">Destination</span>
 </div>
 <span class="text-outline-variant">|</span>
 <span class="inline-flex items-center gap-1 text-secondary text-body-sm">
-<span class="material-symbols-outlined text-[15px] text-outline">speed</span> 130 km/h Rated
+<span class="material-symbols-outlined text-[15px] text-outline">speed</span> <span id="speedText">-- km/h</span>
       </span>
 </div>
 </div>
@@ -88,7 +88,7 @@
 <span class="font-label-sm text-label-sm text-emerald-800 uppercase tracking-wider">Schedule Adherence</span>
 <div class="flex items-baseline gap-1 mt-1">
 <span id="delayValue" class="text-lg font-bold text-emerald-700 font-mono">0 MIN</span>
-<span class="text-xs font-semibold text-emerald-800 uppercase">Delay</span>
+<span id="delayUnit" class="text-xs font-semibold text-emerald-800 uppercase">On Time</span>
 </div>
 <span id="delayNote" class="font-label-sm text-emerald-700 font-semibold mt-0.5">Strictly On Time</span>
 </div>
@@ -222,10 +222,16 @@ Raily — community-powered railway info, independently operated and not affilia
       const nextHaltDetail = document.getElementById('nextHaltDetail');
       const trainBadge = document.getElementById('trainBadge');
       const trainTitle = document.getElementById('trainTitle');
+      const sourceCodeText = document.getElementById('sourceCodeText');
+      const sourceNameText = document.getElementById('sourceNameText');
+      const destinationCodeText = document.getElementById('destinationCodeText');
+      const destinationNameText = document.getElementById('destinationNameText');
+      const speedText = document.getElementById('speedText');
       const barcodeCode = document.getElementById('barcodeCode');
       const statusText = document.getElementById('statusText');
       const statusDetail = document.getElementById('statusDetail');
       const delayValue = document.getElementById('delayValue');
+      const delayUnit = document.getElementById('delayUnit');
       const delayNote = document.getElementById('delayNote');
       const progressLabel = document.getElementById('progressLabel');
       const progressBar = document.getElementById('progressBar');
@@ -242,13 +248,37 @@ Raily — community-powered railway info, independently operated and not affilia
 
       const urlParams = new URLSearchParams(window.location.search);
       const queryEntries = [...urlParams.entries()];
-      const hasOnlyTrainParam = queryEntries.length === 1 && queryEntries[0][0] === 'train';
-      const trainNo = hasOnlyTrainParam && /^\d+$/.test(queryEntries[0][1]) ? queryEntries[0][1] : null;
+      const validQueryArgs = new Set(['train', 'date']);
+      const hasOnlyExpectedParams = queryEntries.length <= 2 && queryEntries.every(([key]) => validQueryArgs.has(key));
+      const rawTrainNo = urlParams.get('train');
+      const rawDateValue = urlParams.get('date');
+      const validTrainNo = rawTrainNo && /^\d+$/.test(rawTrainNo) ? rawTrainNo : null;
+      const validDateValue = rawDateValue && /^\d{4}-\d{2}-\d{2}$/.test(rawDateValue) ? rawDateValue : null;
+      const trainNo = validTrainNo;
+      const requestedDate = validDateValue || null;
       const invalidLinkMessage = queryEntries.length === 0
         ? 'Train parameter required (?train=13051).'
-        : !hasOnlyTrainParam
-          ? 'Only one train parameter is accepted.'
-          : 'Train number must contain digits only.';
+        : !hasOnlyExpectedParams
+          ? 'Only train and date parameters are accepted.'
+          : !validTrainNo
+            ? 'Train number must contain digits only.'
+            : !validDateValue && rawDateValue
+              ? 'Date must be in YYYY-MM-DD format.'
+              : 'Train parameter required (?train=13051).';
+
+      const trainInput = document.getElementById('trainInput');
+      const dateInput = document.getElementById('dateInput');
+      const trainSearchForm = document.getElementById('trainSearchForm');
+
+      function getActiveTrainAndDate() {
+        const formTrain = (trainInput?.value || '').trim();
+        const formDate = (dateInput?.value || '').trim();
+        const activeTrain = formTrain && /^\d+$/.test(formTrain) ? formTrain : (validTrainNo || null);
+        const activeDate = formDate && /^\d{4}-\d{2}-\d{2}$/.test(formDate)
+          ? formDate
+          : validDateValue;
+        return { activeTrain, activeDate };
+      }
 
       function formatRunDays(runDays) {
         if (!Array.isArray(runDays) || !runDays.length) return 'Run Days: --';
@@ -373,7 +403,11 @@ Raily — community-powered railway info, independently operated and not affilia
         statusRequestInProgress = true;
 
         try {
-          const response = await fetch(`https://railradar.in/app/v1/trains/${trainNo}/live?haltsOnly=false`);
+          const { activeTrain, activeDate } = getActiveTrainAndDate();
+          const resolvedTrainNo = activeTrain || trainNo;
+          const resolvedDate = activeDate || requestedDate;
+          const dateQuery = resolvedDate ? `&date=${encodeURIComponent(resolvedDate)}` : '';
+          const response = await fetch(`https://railradar.in/app/v1/trains/${resolvedTrainNo}/live?haltsOnly=false${dateQuery}`);
           if (!response.ok) {
             throw new Error('Failed to fetch live train status');
           }
@@ -393,6 +427,9 @@ Raily — community-powered railway info, independently operated and not affilia
           const destinationCode = train.destination?.code || '--';
           const sourceName = train.source?.name || sourceCode;
           const destinationName = train.destination?.name || destinationCode;
+          const speedValue = train.maxSpeed ?? train.speed ?? train.averageSpeed ?? current.speed;
+          const numericSpeed = Number(speedValue);
+          const speedLabel = Number.isFinite(numericSpeed) ? `${Math.round(numericSpeed)} km/h` : '-- km/h';
           const station = current.stationName || 'Gaya Jn';
           const stationCode = current.stationCode || '--';
           const status = (current.status || 'AT STATION').toUpperCase();
@@ -410,6 +447,21 @@ Raily — community-powered railway info, independently operated and not affilia
           }
           if (trainTitle) {
             trainTitle.textContent = `${trainName} (#${trainNumber})`;
+          }
+          if (sourceCodeText) {
+            sourceCodeText.textContent = sourceCode;
+          }
+          if (sourceNameText) {
+            sourceNameText.textContent = sourceName;
+          }
+          if (destinationCodeText) {
+            destinationCodeText.textContent = destinationCode;
+          }
+          if (destinationNameText) {
+            destinationNameText.textContent = destinationName;
+          }
+          if (speedText) {
+            speedText.textContent = speedLabel;
           }
           if (barcodeCode) {
             barcodeCode.textContent = `RAILY•${trainNumber}•${sourceCode}-${destinationCode}•${new Date().getFullYear()}`;
@@ -439,18 +491,24 @@ Raily — community-powered railway info, independently operated and not affilia
           }
           if (delayNote) {
             const isDelayed = delayMinutes > 0;
+            const isEarly = delayMinutes < 0;
             const delayCard = delayNote.parentElement;
             delayNote.textContent = isDelayed
-              ? `${Math.abs(delayMinutes)} MIN LATE`
-              : delayMinutes < 0
-                ? `${Math.abs(delayMinutes)} MIN EARLY`
+              ? 'Behind schedule'
+              : isEarly
+                ? 'Ahead of schedule'
                 : 'Strictly On Time';
+            if (delayUnit) {
+              delayUnit.textContent = isDelayed ? 'Late' : isEarly ? 'Early' : 'On Time';
+            }
             delayCard.className = isDelayed
               ? 'p-space-sm rounded-xl bg-red-100 border border-red-400 flex flex-col justify-between'
               : 'p-space-sm rounded-xl bg-emerald-50/80 border border-emerald-200/60 flex flex-col justify-between';
             delayCard.children[0].className = `font-label-sm text-label-sm ${isDelayed ? 'text-red-800' : 'text-emerald-800'} uppercase tracking-wider`;
             delayValue.className = `text-lg font-bold ${isDelayed ? 'text-red-700' : 'text-emerald-700'} font-mono`;
-            delayValue.nextElementSibling.className = `text-xs font-semibold ${isDelayed ? 'text-red-800' : 'text-emerald-800'} uppercase`;
+            if (delayUnit) {
+              delayUnit.className = `text-xs font-semibold ${isDelayed ? 'text-red-800' : 'text-emerald-800'} uppercase`;
+            }
             delayNote.className = `font-label-sm ${isDelayed ? 'text-red-700' : 'text-emerald-700'} font-semibold mt-0.5`;
           }
           if (progressLabel) {
@@ -505,13 +563,41 @@ Raily — community-powered railway info, independently operated and not affilia
       }
 
       refreshBtn.addEventListener('click', () => {
-        if (!trainNo) return;
+        const { activeTrain } = getActiveTrainAndDate();
+        if (!activeTrain) return;
         refreshIcon.classList.add('animate-spin');
         loadTrainStatus();
         setTimeout(() => {
           refreshIcon.classList.remove('animate-spin');
         }, 650);
       });
+
+      if (trainSearchForm) {
+        trainSearchForm.addEventListener('submit', (event) => {
+          event.preventDefault();
+          const { activeTrain, activeDate } = getActiveTrainAndDate();
+          if (!activeTrain) {
+            window.location.replace('ERROR.html');
+            return;
+          }
+          const url = new URL(window.location.href);
+          url.searchParams.set('train', activeTrain);
+          if (activeDate) {
+            url.searchParams.set('date', activeDate);
+          } else {
+            url.searchParams.delete('date');
+          }
+          window.history.replaceState({}, '', url);
+          loadTrainStatus();
+        });
+      }
+
+      if (trainInput && validTrainNo) {
+        trainInput.value = validTrainNo;
+      }
+      if (dateInput && validDateValue) {
+        dateInput.value = validDateValue;
+      }
 
       if (trainNo) {
         loadTrainStatus();
