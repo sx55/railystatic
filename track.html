@@ -302,6 +302,19 @@ Raily — community-powered railway info, independently operated and not affilia
         return `${hours}h ${minutes}m`;
       }
 
+            function formatJourneyStartDate(value) {
+              if (!value) return '--';
+              const dateValue = /^\d{4}-\d{2}-\d{2}$/.test(String(value))
+                ? `${value}T00:00:00`
+                : value;
+              const date = new Date(dateValue);
+              return Number.isNaN(date.getTime()) ? '--' : date.toLocaleDateString([], {
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric'
+              });
+            }
+
       function formatScheduleTime(value) {
         if (!value) return '--';
         const date = new Date(value);
@@ -524,7 +537,9 @@ Raily — community-powered railway info, independently operated and not affilia
             distanceText.textContent = `Distance: ${formatDistance(train.distance)}`;
           }
           if (journeyText) {
-            journeyText.textContent = `Journey: ${formatJourney(train.duration)}`;
+            const journeyStartValue = train.startDate || train.startDateTime || train.departureDate ||
+              route[0]?.scheduledDeparture || activeDate || requestedDate;
+            journeyText.textContent = `Journey: ${formatJourneyStartDate(journeyStartValue)} • ${formatJourney(train.duration)}`;
           }
           if (isAtHalt && currentStop && dwellTimer && nextHaltDetail) {
             const now = Date.now();
